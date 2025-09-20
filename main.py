@@ -12,7 +12,10 @@ import re
 load_dotenv()
 
 # --- Configuration ---
-PORT = int(os.getenv("PORT", "5050"))
+# Fix for PORT environment variable handling
+port_env = os.getenv("PORT", "5050")
+PORT = int(port_env) if port_env and port_env.strip() else 5050
+
 DOMAIN = os.getenv("CLOUDFLARE_URL")
 if not DOMAIN:
     raise ValueError("CLOUDFLARE_URL environment variable not set.")
@@ -71,11 +74,11 @@ CALL FLOW:
 
 WALLET INSTRUCTIONS (only if caller asks for help):
 iPhone/Apple Watch:
-      “Open Wallet, select the card, tap the three dots,
-       find Device Account Number, share the last four digits.”
+      â€œOpen Wallet, select the card, tap the three dots,
+       find Device Account Number, share the last four digits.â€
    Android/Google Wallet:
-      “Open Google Wallet, select the card, tap Card details,
-       find Virtual Account Number, share the last four digits.”
+      â€œOpen Google Wallet, select the card, tap Card details,
+       find Virtual Account Number, share the last four digits.â€
 
 Remember: Always sound human. Confirm briefly after each detail, then move on."""
 
