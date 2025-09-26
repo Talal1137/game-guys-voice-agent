@@ -16,7 +16,7 @@ import tempfile
 load_dotenv()
 
 # --- Configuration ---
-PORT = int(os.getenv("PORT", "5050"))
+PORT = int(os.getenv("PORT", "8080"))
 DOMAIN = os.getenv("CLOUDFLARE_URL")
 if not DOMAIN:
     raise ValueError("CLOUDFLARE_URL environment variable not set.")
@@ -68,11 +68,11 @@ CALL FLOW:
    - If physical card: Ask for last 4 digits of card
    - If product issue: Ask what product and row number
    - Finally: Ask for one contact (phone or email)
-   - End with: "Thank you for the information. We'll process your refund and you should see it within 3-5 business days. If you have any questions, please email us at info@gameguys.com.au. Thanks for calling Game Guys - have a great day!"
+   - End with: "Thank you for the information. We'll process your refund and you should see it within three to five business days. It would be helpful if you could send a photo or video of the issue to info@gameguys.com.au. Thanks for calling Game Guys and goodbye!"
 
 5. FOR CARD STUCK ISSUES:
    - Follow same data collection
-   - End with: "Thank you for the information. We'll arrange for our technician to retrieve your card and process any refund needed. This will be resolved within 24 hours. If you have any questions, please email us at info@gameguys.com.au. Thanks for calling Game Guys - have a great day!"
+   - End with: "Thank you for the information. We'll arrange for our technician to retrieve your card and process any refund needed. This will be resolved within twenty four hours. It would be helpful if you could send a photo or video of the stuck card to info@gameguys.com.au. Thanks for calling Game Guys and goodbye!"
 
 6. FOR NON-REFUND ISSUES:
    - Give appropriate response from script
@@ -316,8 +316,9 @@ def find_matching_location(user_input):
         if location.lower() in user_lower:
             return location
     
-    # Handle special cases and common variations
+    # Handle special cases and common variations + speech recognition errors
     location_mappings = {
+        # Original mappings
         'ecq': 'Eastern Creek Quarter',
         'eastern creek': 'Eastern Creek Quarter',
         'pac fair': 'Pacific Fair',
@@ -346,7 +347,79 @@ def find_matching_location(user_input):
         'showground': 'Showground Village',
         'burwood': 'Burwood Chinatown',
         'marrickville': 'Marrickville Metro',
-        'birkenhead': 'Birkenhead Point'
+        'birkenhead': 'Birkenhead Point',
+        
+        # Speech recognition error mappings
+        'ralph hill': 'Rouse Hill Shopping Centre',
+        'rose hill': 'Rouse Hill Shopping Centre',
+        'house hill': 'Rouse Hill Shopping Centre',
+        'rousse hill': 'Rouse Hill Shopping Centre',
+        'castle hill tower': 'Castle Hill Towers',
+        'castle towers': 'Castle Hill Towers',
+        'casula': 'Casula Mall',
+        'casual mall': 'Casula Mall',
+        'casual': 'Casula Mall',
+        'eastern creek': 'Eastern Creek Quarter',
+        'eastern creek quarter': 'Eastern Creek Quarter',
+        'eastern creek shopping': 'Eastern Creek Quarter',
+        'ed square': 'Ed Square',
+        'edmondson': 'Ed Square',
+        'edmundson': 'Ed Square',
+        'edmondson park': 'Ed Square',
+        'macquarie center': 'Macquarie Centre',
+        'macquarie centre': 'Macquarie Centre',
+        'macquarie': 'Macquarie Centre',
+        'marrickville': 'Marrickville Metro',
+        'marrickville metro': 'Marrickville Metro',
+        'mountainies': 'Mounties',
+        'mounty': 'Mounties',
+        'parramatta westfield': 'Parramatta Westfields',
+        'parramatta': 'Parramatta Westfields',
+        'westfield parramatta': 'Parramatta Westfields',
+        'top ride': 'Top Ryde',
+        'top ryde': 'Top Ryde',
+        'oasis': 'Oasis',
+        'world square': 'World Square',
+        'pacific fair': 'Pacific Fair',
+        'pac fair': 'Pacific Fair',
+        'ashfield': 'Ashfield Mall',
+        'westpoint': 'Westpoint',
+        'west point': 'Westpoint',
+        'grove shopping': 'The Grove Shopping Centre',
+        'grove': 'The Grove Shopping Centre',
+        'the grove': 'The Grove Shopping Centre',
+        'burwood chinatown': 'Burwood Chinatown',
+        'chinatown': 'Burwood Chinatown',
+        'showground village': 'Showground Village',
+        'showgrounds': 'Showground Village',
+        'central park': 'Central Park Mall',
+        'macarthur': 'Macarthur Square',
+        'mcarthur': 'Macarthur Square',
+        'bankstown': 'Bankstown Central',
+        'broadway': 'Broadway Shopping Centre',
+        'broadway shopping': 'Broadway Shopping Centre',
+        'carlingford': 'Carlingford Court',
+        'east village': 'East Village Shopping Centre',
+        'winston hills': 'Winston Hills',
+        'winston hill': 'Winston Hills',
+        'roselands': 'Roselands Shopping Centre',
+        'rose lands': 'Roselands Shopping Centre',
+        'merrylands stockland': 'Merrylands Stocklands',
+        'merrylands': 'Merrylands Stocklands',
+        'stockland merrylands': 'Merrylands Stocklands',
+        'wetherill park': 'Wetherill Park Stocklands',
+        'wetherill': 'Wetherill Park Stocklands',
+        'weather hill': 'Wetherill Park Stocklands',
+        'stockland wetherill': 'Wetherill Park Stocklands',
+        'bass hill': 'Bass Hill Plaza',
+        'base hill': 'Bass Hill Plaza',
+        'north rocks': 'North Rocks',
+        'north rock': 'North Rocks',
+        'southgate': 'Southgate',
+        'south gate': 'Southgate',
+        'birkenhead': 'Birkenhead Point',
+        'birken head': 'Birkenhead Point',
+        'burkenhead': 'Birkenhead Point'
     }
     
     for key, location in location_mappings.items():
@@ -556,9 +629,9 @@ async def gemini_response(chat_session, user_prompt, call_sid):
                     
                 # All information collected - provide ending instruction
                 if data.get('card_stuck'):
-                    gemini_context += f"\nALL INFORMATION COLLECTED. End with: 'Thank you for the information. We'll arrange for our technician to retrieve your card and process any refund needed. This will be resolved within 24 hours. If you have any questions, please email us at info@gameguys.com.au. Thanks for calling Game Guys and goodbye!'"
+                    gemini_context += f"\nALL INFORMATION COLLECTED. End with: 'Thank you for the information. We'll arrange for our technician to retrieve your card and process any refund needed. This will be resolved within twenty four hours. It would be helpful if you could send a photo or video of the stuck card to info@gameguys.com.au. Thanks for calling Game Guys and goodbye!'"
                 else:
-                    gemini_context += f"\nALL INFORMATION COLLECTED. End with: 'Thank you for the information. We'll process your refund and you should see it within 3-5 business days. If you have any questions, please email us at info@gameguys.com.au. Thanks for calling Game Guys and goodbye!'"
+                    gemini_context += f"\nALL INFORMATION COLLECTED. End with: 'Thank you for the information. We'll process your refund and you should see it within three to five business days. It would be helpful if you could send a photo or video of the issue to info@gameguys.com.au. Thanks for calling Game Guys and goodbye!'"
 
     # Send only clean prompt to Gemini
     if gemini_context:
@@ -633,29 +706,40 @@ async def gemini_response(chat_session, user_prompt, call_sid):
                     update_call_data(call_sid, location_attempts=current_attempts + 1)
                     # Will be handled by Gemini context to ask for clarification
                 else:
-                    # After 3 attempts, save whatever they said
-                    # Extract the location name from their input
-                    location_from_input = user_prompt.strip()
-                    # Clean it up a bit
-                    location_patterns = [
-                        r'(?:machine is (?:in|at)\s+)(.+)',
-                        r'(?:location is\s+)(.+)',
-                        r'(?:it\'?s (?:in|at)\s+)(.+)',
-                        r'(.+)'  # fallback - use the whole input
-                    ]
-                    
-                    for pattern in location_patterns:
-                        match = re.search(pattern, location_from_input, re.IGNORECASE)
-                        if match:
-                            cleaned_location = match.group(1).strip().title()
-                            update_call_data(call_sid, location=cleaned_location, location_attempts=3)
-                            break
+                    # After 3 attempts, save whatever they said as location ONLY if we're currently asking for location
+                    # Check if the last question was about location
+                    last_question = call_data[call_sid].get('last_question', '').lower()
+                    if 'location' in last_question or 'where' in last_question:
+                        location_from_input = user_prompt.strip()
+                        # Clean it up a bit
+                        location_patterns = [
+                            r'(?:machine is (?:in|at)\s+)(.+)',
+                            r'(?:location is\s+)(.+)',
+                            r'(?:it\'?s (?:in|at)\s+)(.+)',
+                            r'(.+)'  # fallback - use the whole input
+                        ]
+                        
+                        for pattern in location_patterns:
+                            match = re.search(pattern, location_from_input, re.IGNORECASE)
+                            if match:
+                                cleaned_location = match.group(1).strip().title()
+                                update_call_data(call_sid, location=cleaned_location, location_attempts=3)
+                                break
 
         # Detect product name (but not for card stuck scenarios)
-        if not is_correction and not call_data[call_sid].get('product_name') and not call_data[call_sid].get('card_stuck'):
+        if not is_correction and not call_data[call_sid].get('card_stuck'):
             detected_product = detect_product_name(user_prompt)
+            # Update product name if we detect a better one, or if current one is generic
+            current_product = call_data[call_sid].get('product_name', '')
+            generic_products = ["i didn't get my product.", "product", "item", "thing"]
+            
             if detected_product and detected_product not in ['my card', 'card', 'the card']:
-                update_call_data(call_sid, product_name=detected_product)
+                # Always update if current is generic or empty
+                if not current_product or any(generic in current_product.lower() for generic in generic_products):
+                    update_call_data(call_sid, product_name=detected_product)
+                # Or if we detect a specific product name in response to product question
+                elif any(word in call_data[call_sid].get('last_question', '').lower() for word in ['product', 'item', 'what']):
+                    update_call_data(call_sid, product_name=detected_product)
 
         # Detect amounts (improved pattern)
         if not is_correction and not call_data[call_sid].get('amount'):
@@ -745,22 +829,47 @@ async def gemini_response(chat_session, user_prompt, call_sid):
             else:
                 email_match = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b', user_prompt)
                 spaced_phone = re.search(r'(\d\s+){6,}\d', user_prompt)
+                
+                # Handle spoken phone formats like "I for 1 5, double 8, 1 5 6 8"
+                spoken_phone_patterns = [
+                    r'(?:i\s*)?(?:for\s+)?(\d)\s*(\d)[,\s]*(?:double\s+)?(\d+)[,\s]*(\d)[,\s]*(\d)[,\s]*(\d)[,\s]*(\d)',
+                    r'(\d)\s*(\d)\s*(\d)\s*(\d)[,\s]*(\d)\s*(\d)\s*(\d)\s*(\d)[,\s]*(\d)\s*(\d)',
+                ]
+                
                 if email_match:
                     update_call_data(call_sid, contact_info=email_match.group())
                 elif spaced_phone:
                     phone_number = ''.join(spaced_phone.group().split())
                     update_call_data(call_sid, contact_info=phone_number)
                 else:
-                    phone_patterns = [
-                        r'\b(\d{4}\s?\d{3}\s?\d{3})\b',
-                        r'\b(\d{10})\b',
-                        r'\b(\+61\s?\d{3}\s?\d{3}\s?\d{3})\b',
-                    ]
-                    for pattern in phone_patterns:
-                        phone_match = re.search(pattern, user_prompt)
-                        if phone_match:
-                            update_call_data(call_sid, contact_info=phone_match.group())
-                            break
+                    # Try spoken phone patterns
+                    for pattern in spoken_phone_patterns:
+                        spoken_match = re.search(pattern, user_prompt, re.IGNORECASE)
+                        if spoken_match:
+                            # Extract and clean up the phone number
+                            groups = [g for g in spoken_match.groups() if g]
+                            # Handle "double 8" -> "88"
+                            phone_digits = []
+                            for group in groups:
+                                if group.isdigit():
+                                    phone_digits.append(group)
+                            phone_number = ''.join(phone_digits)
+                            if len(phone_number) >= 8:  # Reasonable phone number length
+                                update_call_data(call_sid, contact_info=phone_number)
+                                break
+                    
+                    # Fallback to regular patterns
+                    if not call_data[call_sid].get('contact_info'):
+                        phone_patterns = [
+                            r'\b(\d{4}\s?\d{3}\s?\d{3})\b',
+                            r'\b(\d{10})\b',
+                            r'\b(\+61\s?\d{3}\s?\d{3}\s?\d{3})\b',
+                        ]
+                        for pattern in phone_patterns:
+                            phone_match = re.search(pattern, user_prompt)
+                            if phone_match:
+                                update_call_data(call_sid, contact_info=phone_match.group())
+                                break
 
         # Detect "don't know" answers and "can't tell" scenarios
         dont_know_phrases = ["don't know", "dont know", "not sure", "no idea", "can't remember", "unsure", "don't know both", "dont know both", "can't tell", "cant tell"]
@@ -789,12 +898,22 @@ async def gemini_response(chat_session, user_prompt, call_sid):
 
         # Detect row numbers
         if not is_correction and (not call_data[call_sid]['row_number'] or call_data[call_sid]['row_number'] == "Customer didn't know"):
+            # Check if we're responding to a row number question
+            last_question = call_data[call_sid].get('last_question', '').lower()
+            is_row_question = 'row' in last_question
+            
             row_patterns = [r'\b([A-Z]\d+)\b', r'\b(row\s*[A-Z]?\d+)\b', r'\b([A-Z]{1,2}\d+)\b']
-            for pattern in row_patterns:
-                row_match = re.search(pattern, user_prompt, re.IGNORECASE)
-                if row_match:
-                    update_call_data(call_sid, row_number=row_match.group(1).upper())
-                    break
+            
+            # If responding to row question and it's just a number, treat as row
+            # If responding to row question and it's just a number, treat as row
+            if is_row_question and re.match(r'^\s*\d+\s*$', user_prompt.strip()):
+                update_call_data(call_sid, row_number=user_prompt.strip())
+            else:
+                for pattern in row_patterns:
+                    row_match = re.search(pattern, user_prompt, re.IGNORECASE)
+                    if row_match:
+                        update_call_data(call_sid, row_number=row_match.group(1).upper())
+                        break
 
         # Detect last 4 digits
         if not is_correction and not call_data[call_sid].get('last_4_digits'):
@@ -954,3 +1073,4 @@ if __name__ == "__main__":
     print(f"Starting Game Guys Voice Assistant on port {PORT}")
     print(f"WebSocket URL for Twilio: {WS_URL}")
     uvicorn.run(app, host="0.0.0.0", port=PORT)
+
