@@ -16,7 +16,8 @@ import tempfile
 load_dotenv()
 
 # --- Configuration ---
-PORT = int(os.getenv("PORT", "8080"))
+port_env = os.getenv("PORT", "8080")
+PORT = int(port_env) if port_env and port_env.strip() else 8080
 DOMAIN = os.getenv("CLOUDFLARE_URL")
 if not DOMAIN:
     raise ValueError("CLOUDFLARE_URL environment variable not set.")
