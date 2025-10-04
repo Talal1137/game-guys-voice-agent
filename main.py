@@ -11,16 +11,17 @@ import base64
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import tempfile
+import asyncio
 
 # Load environment variables from .env file
 load_dotenv()
 
 # --- Configuration ---
-port_env = os.getenv("PORT", "8080")
-PORT = int(port_env) if port_env and port_env.strip() else 8080
-DOMAIN = os.getenv("CLOUDFLARE_URL")
+PORT = int(os.getenv("PORT", "5050"))
+PORT = int(port_env) if port_env and port_env.strip() else 5050
+DOMAIN = os.getenv("URL")
 if not DOMAIN:
-    raise ValueError("CLOUDFLARE_URL environment variable not set.")
+    raise ValueError("URL environment variable not set.")
 WS_URL = f"wss://{DOMAIN}/ws"
 
 # Updated greeting to reflect the new model
@@ -145,9 +146,58 @@ def get_sheets_service():
     except Exception as e:
         print(f"Error initializing Google Sheets service: {e}")
         return None
+    
+async def generate_call_summary(call_sid):
+    """Generate AI summary of the call for backup data extraction"""
+    if call_sid not in call_data:
+        return "No conversation data available"
+    
+    data = call_data[call_sid]
+    conversation_history = data.get('conversation_history', [])
+    
+    if not conversation_history:
+        return "No conversation recorded"
+    
+    # Join all user messages
+    user_messages = []
+    for entry in conversation_history:
+        if entry.get('role') == 'user':
+            user_messages.append(entry.get('content', ''))
+    
+    full_conversation = " | ".join(user_messages)
+    
+    if not full_conversation.strip():
+        return "No customer responses recorded"
+    
+    # Create summary prompt
+    summary_prompt = f"""Analyze this customer service call transcript and extract key information in a structured format:
 
-def update_google_sheet(call_sid):
-    """Update Google Sheet with call data"""
+Customer responses: {full_conversation}
+
+Please provide a summary in this exact format:
+ISSUE: [what went wrong with the vending machine]
+LOCATION: [shopping center/location mentioned by customer]
+PRODUCT: [specific product/item if mentioned]
+ROW: [row number/letter-number combination if mentioned]  
+AMOUNT: [dollar amount charged if mentioned]
+TIME: [when transaction occurred if mentioned]
+PAYMENT: [how they paid - card/phone/watch/cash if mentioned]
+CONTACT: [phone number or email if provided]
+ADDITIONAL: [any other relevant details, uncertainties, or context]
+
+If information wasn't mentioned by the customer, write "Not mentioned" for that field. If customer expressed uncertainty (like "maybe" or "I think"), note that uncertainty."""
+
+    try:
+        # Use Gemini to generate summary
+        summary_model = genai.GenerativeModel('gemini-2.5-flash')
+        response = await summary_model.generate_content_async(summary_prompt)
+        return response.text
+    except Exception as e:
+        print(f"Error generating summary for {call_sid}: {e}")
+        return f"Summary generation failed. Raw conversation: {full_conversation[:500]}..."
+    
+async def update_google_sheet(call_sid):
+    """Update Google Sheet with call data including AI summary"""
     if call_sid not in call_data or not SPREADSHEET_ID:
         return
 
@@ -158,10 +208,25 @@ def update_google_sheet(call_sid):
     try:
         data = call_data[call_sid]
         
-        # Prepare row data with "Customer doesn't know" for missing fields
+        # Generate AI summary
+        try:
+            summary = await generate_call_summary(call_sid)
+        except Exception as e:
+            print(f"Error generating summary: {e}")
+            summary = "Summary generation failed"
+        
+        # Format timestamp
+        formatted_timestamp = data.get("timestamp", "").replace("T", " ").split(".")[0]
+        
+        # Format phone number
+        formatted_phone = data.get("caller_number", "").replace("+", "")
+        if len(formatted_phone) == 12:  # Including country code
+            formatted_phone = f"+{formatted_phone[:2]} {formatted_phone[2:5]} {formatted_phone[5:8]} {formatted_phone[8:]}"
+        
+        # Prepare row data with summary column (Extended to column P)
         row_values = [
-            data.get("timestamp", ""),
-            data.get("caller_number", ""),
+            formatted_timestamp,
+            formatted_phone,
             data.get("call_sid", ""),
             data.get("issue_type", "Customer doesn't know") if not data.get("issue_type") else data.get("issue_type"),
             data.get("location", "Customer doesn't know") if not data.get("location") else data.get("location"),
@@ -174,18 +239,19 @@ def update_google_sheet(call_sid):
             data.get("contact_info", "Customer doesn't know") if not data.get("contact_info") else data.get("contact_info"),
             data.get("notes", ""),
             str(data.get("photo_mentioned", False)),
-            str(data.get("call_ended", False))
+            str(data.get("call_ended", False)),
+            summary  # New AI summary column
         ]
 
         service.spreadsheets().values().append(
             spreadsheetId=SPREADSHEET_ID,
-            range="Sheet1!A:O",
+            range="Sheet1!A:P",  # Extended to column P for summary
             valueInputOption="RAW",
             insertDataOption="INSERT_ROWS",
             body={"values": [row_values]}
         ).execute()
         
-        print(f"Successfully updated Google Sheet for call {call_sid}")
+        print(f"Successfully updated Google Sheet with AI summary for call {call_sid}")
         
     except Exception as e:
         print(f"Error updating Google Sheet for {call_sid}: {e}")
@@ -280,44 +346,25 @@ def initialize_call_data(call_sid, caller_number=None):
     }
 
 def update_call_data(call_sid, **kwargs):
-    """Update call data with new information and save when important data is collected"""
+    """Update call data with new information"""
     if call_sid in call_data:
+        # Special handling for product name - don't overwrite with responses
+        if 'product_name' in kwargs:
+            new_product = kwargs['product_name'].lower()
+            # Don't update if it's just a confirmation or number response
+            if any(word in new_product for word in ['yes', 'no', 'same', 'digit', 'row']):
+                del kwargs['product_name']
+            # Keep meaningful product names
+            elif 'chips' in new_product or 'snack' in new_product:
+                call_data[call_sid]['product_name'] = kwargs['product_name']
+                
+        # Update other fields
         call_data[call_sid].update(kwargs)
-        
-        # Save immediately when we collect important information
-        important_fields = ['issue_type', 'location', 'amount', 'transaction_time', 'payment_method', 'last_4_digits', 'contact_info', 'row_number', 'product_name']
-        if any(field in kwargs for field in important_fields):
-            try:
-                save_call_data_to_json(call_sid)
-                print(f"Auto-saved call data after collecting: {list(kwargs.keys())}")
-            except Exception as e:
-                print(f"Error auto-saving call data for {call_sid}: {e}")
 
 def find_matching_location(user_input):
-    """Find the best matching location from the valid locations list"""
-    user_lower = user_input.lower()
+    """Find the best matching location using exact mappings"""
+    user_lower = user_input.lower().strip()
     
-    # Handle spelled-out locations first
-    spelled_out_mappings = {
-        'b u r w o o d': 'Burwood Chinatown',
-        'b u r w o 0 d': 'Burwood Chinatown',  # Handle 0 as O
-        'burwood': 'Burwood Chinatown',
-        's n b u r w o o d': 'Burwood Chinatown',
-        's n b u r w o 0 d': 'Burwood Chinatown',
-    }
-    
-    # Clean up spacing and check spelled-out locations
-    cleaned_input = re.sub(r'\s+', ' ', user_lower.strip())
-    for spelled, location in spelled_out_mappings.items():
-        if spelled in cleaned_input:
-            return location
-    
-    # Direct matches second
-    for location in VALID_LOCATIONS:
-        if location.lower() in user_lower:
-            return location
-    
-    # Handle special cases and common variations + speech recognition errors
     location_mappings = {
         # Original mappings
         'ecq': 'Eastern Creek Quarter',
@@ -423,9 +470,15 @@ def find_matching_location(user_input):
         'burkenhead': 'Birkenhead Point'
     }
     
-    for key, location in location_mappings.items():
+    # Check exact matches first
+    for key, value in location_mappings.items():
+        if user_lower == key:
+            return value
+    
+    # If no exact match, try partial
+    for key, value in location_mappings.items():
         if key in user_lower:
-            return location
+            return value
     
     return None
 
@@ -465,25 +518,21 @@ def detect_correction_patterns(user_input):
     
     return False, None
 
-def detect_product_name(user_input):
-    """Detect product names in user input"""
-    product_patterns = [
-        r'(?:it was|product was|item was|bought|purchased|wanted|tried to get|trying to buy)\s+(?:a\s+|an\s+|the\s+)?(.+?)(?:\s+but|\s+and|\s*$)',
-        r'(?:a\s+|an\s+|the\s+)?(.+?)(?:\s+got stuck|\s+didn\'t come out|\s+was stuck)',
-        r'(?:from\s+row\s+\w+\s+)(?:it was|was)\s+(?:a\s+|an\s+|the\s+)?(.+)',
-        r'(?:the\s+product\s+was\s+)?(?:a\s+|an\s+|the\s+)?(.+?)(?:\s*$)',
+def detect_product_name(user_input, last_question=""):
+    """Detect product name when specifically asked about it"""
+    product_questions = [
+        'what product',
+        'which product', 
+        'what item',
+        'what was stuck',
+        'what did you try to buy',
+        'what were you trying to get'
     ]
     
-    for pattern in product_patterns:
-        try:
-            match = re.search(pattern, user_input.lower())
-            if match:
-                product = match.group(1).strip()
-                exclude_words = ['something', 'nothing', 'anything', 'the', 'a', 'an', 'item', 'product', 'thing', 'stuff']
-                if product not in exclude_words and len(product) > 2:
-                    return product
-        except:
-            continue
+    if any(q in last_question.lower() for q in product_questions):
+        product = user_input.strip().rstrip('.!?')
+        if product.lower() not in ['yes', 'no', 'okay', 'sure', 'correct']:
+            return product
     
     return None
 
@@ -549,6 +598,17 @@ def determine_correction_field(corrected_value, call_sid):
 
 async def gemini_response(chat_session, user_prompt, call_sid):
     """Get a response from the Gemini API and update call data"""
+
+    # Store user input in conversation history FIRST
+    if call_sid in call_data:
+        if 'conversation_history' not in call_data[call_sid]:
+            call_data[call_sid]['conversation_history'] = []
+        
+        call_data[call_sid]['conversation_history'].append({
+            'role': 'user',
+            'content': user_prompt,
+            'timestamp': datetime.now().isoformat()
+        })
 
     # Check for goodbye/end call phrases first
     user_lower = user_prompt.lower()
@@ -643,6 +703,14 @@ async def gemini_response(chat_session, user_prompt, call_sid):
     # Send prompt to Gemini/chat session
     response = await chat_session.send_message_async(full_prompt)
     response_text = getattr(response, 'text', str(response))
+
+    # Store the assistant's response in conversation history
+    if call_sid in call_data:
+        call_data[call_sid]['conversation_history'].append({
+            'role': 'assistant', 
+            'content': response_text,
+            'timestamp': datetime.now().isoformat()
+        })
 
     # Store the assistant's question for potential repetition
     if '?' in response_text and call_sid in call_data:
@@ -1014,7 +1082,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     # Save the call data BEFORE closing
                     try:
                         save_call_data_to_json(call_sid)
-                        update_google_sheet(call_sid)
+                        await update_google_sheet(call_sid)
                         print(f"Successfully saved call data and updated Google Sheet for {call_sid}")
                     except Exception as e:
                         print(f"Error saving call data before goodbye for {call_sid}: {e}")
@@ -1057,7 +1125,7 @@ async def websocket_endpoint(websocket: WebSocket):
         if call_sid and call_sid in call_data:
             try:
                 save_call_data_to_json(call_sid)
-                update_google_sheet(call_sid)
+                await update_google_sheet(call_sid)
                 print(f"Successfully saved call data and updated Google Sheet for {call_sid}")
             except Exception as e:
                 print(f"Error saving call data for {call_sid}: {e}")
@@ -1074,4 +1142,3 @@ if __name__ == "__main__":
     print(f"Starting Game Guys Voice Assistant on port {PORT}")
     print(f"WebSocket URL for Twilio: {WS_URL}")
     uvicorn.run(app, host="0.0.0.0", port=PORT)
-
