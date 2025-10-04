@@ -17,11 +17,10 @@ import asyncio
 load_dotenv()
 
 # --- Configuration ---
-port_env = os.getenv("PORT", "5050")
-PORT = int(port_env) if port_env and port_env.strip() else 5050
-DOMAIN = os.getenv("URL")
+PORT = int(os.getenv("PORT", "8080"))
+DOMAIN = os.getenv("URL", "").replace("https://", "").replace("http://", "").strip("/")
 if not DOMAIN:
-    raise ValueError("URL environment variable not set.")
+    raise ValueError("URL environment variable not set correctly.")
 WS_URL = f"wss://{DOMAIN}/ws"
 
 # Updated greeting to reflect the new model
