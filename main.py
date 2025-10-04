@@ -17,7 +17,7 @@ import asyncio
 load_dotenv()
 
 # --- Configuration ---
-PORT = int(os.getenv("PORT", "5050"))
+port_env = os.getenv("PORT", "5050")
 PORT = int(port_env) if port_env and port_env.strip() else 5050
 DOMAIN = os.getenv("URL")
 if not DOMAIN:
